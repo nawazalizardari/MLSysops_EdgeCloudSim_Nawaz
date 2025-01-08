@@ -28,18 +28,18 @@ public abstract class EdgeServerManager {
 	protected List<List<EdgeVM>> vmList;
 
 	public EdgeServerManager() {
-		localDatacenters=new ArrayList<Datacenter>();
+		localDatacenters = new ArrayList<Datacenter>();
 		vmList = new ArrayList<List<EdgeVM>>();
 	}
 
-	public List<EdgeVM> getVmList(int hostId){
+	public List<EdgeVM> getVmList(int hostId) {
 		return vmList.get(hostId);
 	}
-	
-	public List<Datacenter> getDatacenterList(){
+
+	public List<Datacenter> getDatacenterList() {
 		return localDatacenters;
 	}
-	
+
 	/*
 	 * initialize edge server manager if needed
 	 */
@@ -54,18 +54,24 @@ public abstract class EdgeServerManager {
 	 * Starts Datacenters
 	 */
 	public abstract void startDatacenters() throws Exception;
-	
+
+	public void startDatacentersEnegy() throws Exception {
+		// todo questo serve solo per gli esempi energia
+	};
+
 	/*
 	 * Terminates Datacenters
 	 */
 	public abstract void terminateDatacenters();
+
 	/*
 	 * Creates VM List
 	 */
 	public abstract void createVmList(int brokerId);
-	
+
 	/*
 	 * returns average utilization of all VMs
 	 */
 	public abstract double getAvgUtilization();
+	public abstract double getEnergyConsumption(double momentOfInterest);
 }

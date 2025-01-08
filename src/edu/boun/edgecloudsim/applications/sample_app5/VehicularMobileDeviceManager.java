@@ -34,7 +34,9 @@ import edu.boun.edgecloudsim.edge_client.Task;
 import edu.boun.edgecloudsim.edge_server.EdgeHost;
 import edu.boun.edgecloudsim.edge_server.EdgeServerManager;
 import edu.boun.edgecloudsim.edge_server.EdgeVM;
+import edu.boun.edgecloudsim.network.NetworkModel;
 import edu.boun.edgecloudsim.utils.TaskProperty;
+import edu.boun.edgecloudsim.utils.DeadHost;
 import edu.boun.edgecloudsim.utils.Location;
 import edu.boun.edgecloudsim.utils.SimLogger;
 
@@ -56,7 +58,11 @@ public class VehicularMobileDeviceManager extends MobileDeviceManager {
 	private static final double MM1_QUEUE_MODEL_UPDATE_INTERVAL = 0.5; // seconds
 	private int taskIdCounter = 0;
 
+	private DeadHost deadHost;
+
 	public VehicularMobileDeviceManager() throws Exception {
+		deadHost = DeadHost.getInstance();
+		deadHost.reset();
 	}
 
 	@Override
@@ -495,7 +501,8 @@ public class VehicularMobileDeviceManager extends MobileDeviceManager {
 			// set related host id
 			schedule(getId(), delay, READY_TO_SELECT_VM, task);
 
-			SimLogger.getInstance().taskStarted(task.getCloudletId(), CloudSim.clock());
+//			SimLogger.getInstance().taskStarted(task.getCloudletId(), CloudSim.clock());
+			SimLogger.getInstance().taskStarted(task.getCloudletId(), task.getAssociatedHostId(), CloudSim.clock());
 			SimLogger.getInstance().setUploadDelay(task.getCloudletId(), delay, delayType);
 		} else {
 			// SimLogger.printLine("Task #" + task.getCloudletId() + " cannot assign to any
@@ -505,6 +512,128 @@ public class VehicularMobileDeviceManager extends MobileDeviceManager {
 
 			edgeOrchestrator.taskFailed(task);
 		}
+	}
+
+	/*
+	 * CLONE but with Task return
+	 */
+	public Task submitTaskEnergy(TaskProperty edgeTask) {
+		double delay = 0;
+		int nextEvent = 0;
+		int nextDeviceForNetworkModel = 0;
+		VM_TYPES vmType = null;
+		NETWORK_DELAY_TYPES delayType = null;
+
+		NetworkModel networkModel = SimManager.getInstance().getNetworkModel();
+
+		// create a task
+		Task task = createTask(edgeTask);
+
+		Location currentLocation = SimManager.getInstance().getMobilityModel().getLocation(task.getMobileDeviceId(),
+				CloudSim.clock());
+
+		// set location of the mobile device which generates this task
+		task.setSubmittedLocation(currentLocation);
+
+		// add related task to log list
+		SimLogger.getInstance().addLog(task.getMobileDeviceId(), task.getCloudletId(), task.getTaskType(),
+				(int) task.getCloudletLength(), (int) task.getCloudletFileSize(), (int) task.getCloudletOutputSize());
+
+		int nextHopId = SimManager.getInstance().getEdgeOrchestrator().getDeviceToOffload(task);
+
+		if (nextHopId == SimSettings.GENERIC_EDGE_DEVICE_ID) {
+			delay = networkModel.getUploadDelay(task.getMobileDeviceId(), nextHopId, task);
+			vmType = SimSettings.VM_TYPES.EDGE_VM;
+			nextEvent = REQUEST_RECEIVED_BY_EDGE_DEVICE;
+			delayType = NETWORK_DELAY_TYPES.WLAN_DELAY;
+			nextDeviceForNetworkModel = SimSettings.GENERIC_EDGE_DEVICE_ID;
+		} else if (nextHopId == SimSettings.MOBILE_DATACENTER_ID) {
+			vmType = VM_TYPES.MOBILE_VM;
+			nextEvent = REQUEST_RECEIVED_BY_MOBILE_DEVICE;
+
+			/*
+			 * TODO: In this scenario device to device (D2D) communication is ignored. If
+			 * you want to consider D2D communication, you should calculate D2D network
+			 * delay here.
+			 *
+			 * You should also add D2D_DELAY to the following enum in SimSettings public
+			 * static enum NETWORK_DELAY_TYPES { WLAN_DELAY, MAN_DELAY, WAN_DELAY }
+			 *
+			 * If you want to get statistics of the D2D networking, you should modify
+			 * SimLogger in a way to consider D2D_DELAY statistics.
+			 */
+		} else {
+			SimLogger.printLine("Unknown nextHopId! Terminating simulation...");
+			System.exit(0);
+		}
+
+		if (delay > 0 || nextHopId == SimSettings.MOBILE_DATACENTER_ID) {
+
+			Vm selectedVM = SimManager.getInstance().getEdgeOrchestrator().getVmToOffload(task, nextHopId);
+
+			if (selectedVM != null) {
+
+				// set related host id
+				task.setAssociatedDatacenterId(nextHopId);
+
+				// set related host id
+				task.setAssociatedHostId(selectedVM.getHost().getId());
+				int idtomanage = task.getAssociatedHostId();
+
+				// set related vm id
+				task.setAssociatedVmId(selectedVM.getId());
+
+				// bind task to related VM
+				getCloudletList().add(task);
+				bindCloudletToVm(task.getCloudletId(), selectedVM.getId());
+
+				SimLogger.getInstance().taskStarted(task.getCloudletId(), task.getMobileDeviceId(), CloudSim.clock());
+
+				/**
+				 *
+				 * le prossime istruzioni ri-simulano l'energia consumata questo perchè gli
+				 * eventi di tipo CREATE_TASK sono gli ultimi ad essere eseguiti e se ci
+				 * basavamo sull energia consumata negli eventi di tipo GET_LOAD_LOG i mobile
+				 * host energy erano già morti quindi per ogni task creato viene simulata
+				 * l'energia consumata fino a quel momento
+				 */
+				SimManager.getInstance().getMobileServerManager().getEnergyConsumed(CloudSim.clock());
+
+//                System.err.println("submitTaskEnergy: task.getmobileID: "+task.getMobileDeviceId());
+				// int idtomanage = task.getMobileDeviceId() +
+				// SimSettings.getInstance().getNumOfEdgeHosts() + 1 ;
+//        		MobileHostEnergy host = ((MobileHostEnergy)SimManager.getInstance().getMobileServerManager().getDatacenter().getHostList().get(task.getMobileDeviceId()));        	
+//        		double energyLevel= host.getEnergyModel().getBatteryLevelWattHour();
+//        		double energyLevelperc= host.getEnergyModel().getBatteryLevelPercentage();
+//        		double energyMax = host.getEnergyModel().getBatteryCapacity();
+
+				if (deadHost.mobileHostIsDead(idtomanage)) {
+					SimLogger.getInstance().failedDueToDeviceDeath(task.getCloudletId(), CloudSim.clock());
+					return null;
+				}
+
+				if (nextHopId != SimSettings.MOBILE_DATACENTER_ID) {
+					networkModel.uploadStarted(task.getSubmittedLocation(), nextDeviceForNetworkModel);
+					SimLogger.getInstance().setUploadDelay(task.getCloudletId(), delay, delayType);
+				}
+
+				schedule(getId(), delay, nextEvent, task);
+			} else {
+				// SimLogger.printLine("Task #" + task.getCloudletId() + " cannot assign to any
+				// VM");
+				SimLogger.getInstance().rejectedDueToVMCapacity(task.getCloudletId(), CloudSim.clock(),
+						vmType.ordinal());
+			}
+		} else {
+			// SimLogger.printLine("Task #" + task.getCloudletId() + " cannot assign to any
+			// VM");
+			SimLogger.getInstance().rejectedDueToBandwidth(task.getCloudletId(), CloudSim.clock(), vmType.ordinal(),
+					delayType);
+//            System.err.println("RIFIUTO per banda - task:" + task.getCloudletId() + " device:" + task.getMobileDeviceId());
+
+		}
+
+		return task;
 	}
 
 	private void submitTaskToVm(Task task, SimSettings.VM_TYPES vmType) {

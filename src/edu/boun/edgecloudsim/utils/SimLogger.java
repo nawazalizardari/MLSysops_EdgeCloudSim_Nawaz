@@ -43,12 +43,14 @@ import edu.boun.edgecloudsim.applications.sample_app5.DelayLogItem;
 import edu.boun.edgecloudsim.core.SimManager;
 import edu.boun.edgecloudsim.core.SimSettings;
 import edu.boun.edgecloudsim.core.SimSettings.NETWORK_DELAY_TYPES;
+import edu.boun.edgecloudsim.edge_client.mobile_processing_unit.MobileHostEnergy;
 import edu.boun.edgecloudsim.utils.SimLogger.NETWORK_ERRORS;
 
 public class SimLogger {
 	public static enum TASK_STATUS {
 		CREATED, UPLOADING, PROCESSING, DOWNLOADING, COMLETED, REJECTED_DUE_TO_VM_CAPACITY, REJECTED_DUE_TO_BANDWIDTH,
-		UNFINISHED_DUE_TO_BANDWIDTH, UNFINISHED_DUE_TO_MOBILITY, REJECTED_DUE_TO_WLAN_COVERAGE
+		UNFINISHED_DUE_TO_BANDWIDTH, UNFINISHED_DUE_TO_MOBILITY, REJECTED_DUE_TO_WLAN_COVERAGE,
+		FAILED_DUE_TO_DEVICE_DEATH // TODO RAMONA: added for the case when the device dies
 	}
 
 	public static enum NETWORK_ERRORS {
@@ -228,6 +230,31 @@ public class SimLogger {
 		}
 	}
 
+	private String toStringLabel(Boolean success) {
+		String result = "taskId" + SimSettings.DELIMITER + "TASK_STATUS" + SimSettings.DELIMITER + "deviceId(mobile)"
+				+ SimSettings.DELIMITER + "datacenterId(type)" + SimSettings.DELIMITER + "hostId (i.e., EdgeServerId)"
+				+ SimSettings.DELIMITER + "vmId" + SimSettings.DELIMITER + "vmType" + SimSettings.DELIMITER // FIXME
+																											// DELETE
+				+ "ApplicationID(taskType)" + SimSettings.DELIMITER + "taskLenght (Million Instruction)"
+				+ SimSettings.DELIMITER + "taskInputSize(KB, namely data to be uploaded)" + SimSettings.DELIMITER
+				+ "taskOutputSize(KB, namely data to be downloaded)" + SimSettings.DELIMITER
+				+ "taskStartTime(millisecond)" + SimSettings.DELIMITER + "taskEndTime(millisecond)"
+				+ SimSettings.DELIMITER + "taskStartDeviceEnergy(Watt-Hour)" + SimSettings.DELIMITER
+				+ "taskEndDeviceEnergy(Watt-Hour)" + SimSettings.DELIMITER + "taskStartDeviceEnergyPerc"
+				+ SimSettings.DELIMITER + "taskEndDeviceEnergyPerc" + SimSettings.DELIMITER;
+
+//		if (success){
+		result += "getNetworkDelay" + SimSettings.DELIMITER;
+		result += "WLAN_DELAY" + SimSettings.DELIMITER;
+		result += "MAN_DELAY" + SimSettings.DELIMITER;
+		result += "WAN_DELAY" + SimSettings.DELIMITER;
+		result += "GSM_DELAY" + SimSettings.DELIMITER;
+//		}
+//		else 
+		result += "TASK_FAIL_REASON";
+		return result;
+	}
+
 	public void simStarted(String outFolder, String fileName) {
 		startTime = System.currentTimeMillis();
 		filePrefix = fileName;
@@ -366,13 +393,18 @@ public class SimLogger {
 		orchestratorOverhead = new double[numOfAppTypes + 1];
 	}
 
-	public void addLog(int deviceId, int taskId, int taskType, int taskLenght, int taskInputType, int taskOutputSize) {
+	// public void addLog(int deviceId, int taskId, int taskType, int taskLenght,
+	// int taskInputSize, int taskOutputSize) {
+	public void addLog(int deviceId, int taskId, int taskType, int taskLenght, int taskInputSize, int taskOutputSize) {
 		// printLine(taskId+"->"+taskStartTime);
-		taskMap.put(taskId, new LogItem(deviceId, taskType, taskLenght, taskInputType, taskOutputSize));
+		taskMap.put(taskId, new LogItem(deviceId, taskType, taskLenght, taskInputSize, taskOutputSize));
 	}
 
-	public void taskStarted(int taskId, double time) {
-		taskMap.get(taskId).taskStarted(time);
+	// public void taskStarted(int taskId, double time) {
+	// taskMap.get(taskId).taskStarted(time);
+	// }
+	public void taskStarted(int taskId, int deviceId, double time) {
+		taskMap.get(taskId).taskStarted(time, deviceId);
 	}
 
 	public void setUploadDelay(int taskId, double delay, NETWORK_DELAY_TYPES delayType) {
@@ -434,11 +466,26 @@ public class SimLogger {
 			vmLoadList.add(new VmLoadLogItem(time, loadOnEdge, loadOnCloud, loadOnMobile));
 	}
 
+	public void addVmUtilizationLog(double time, double loadOnEdge, double loadOnCloud, double loadOnMobile,
+			double energyConsumedEdge, double energyConsumedCloud, double energyConsumedMobile) {
+		if (SimSettings.getInstance().getLocationLogInterval() != 0)
+			vmLoadList.add(new VmLoadLogItem(time, loadOnEdge, loadOnCloud, loadOnMobile, energyConsumedEdge,
+					energyConsumedCloud, energyConsumedMobile));
+	}
+
 	public void addApDelayLog(double time, double[] apUploadDelays, double[] apDownloadDelays) {
 		if (SimSettings.getInstance().getApDelayLogInterval() != 0)
 			apDelayList.add(new ApDelayLogItem(time, apUploadDelays, apDownloadDelays));
 	}
 
+	public void failedDueToDeviceDeath(int taskId, double time) {
+		if (taskMap.get(taskId) == null)
+			System.out.println("Task is null");
+		// todo ramona: added for the case when the device dies
+		taskMap.get(taskId).taskFailedDueToDeviceDeath(time);
+		recordLog(taskId);
+	}
+	
 	public void simStopped() throws IOException {
 		endTime = System.currentTimeMillis();
 		File vmLoadFile = null, locationFile = null, apUploadDelayFile = null, apDownloadDelayFile = null;
@@ -567,10 +614,15 @@ public class SimLogger {
 		double totalVmLoadOnEdge = 0;
 		double totalVmLoadOnCloud = 0;
 		double totalVmLoadOnMobile = 0;
+		double totalEnergyConsumedOnMobile = 0;
+		double totalEnergyConsumedOnEDGE = 0;
+
 		for (VmLoadLogItem entry : vmLoadList) {
 			totalVmLoadOnEdge += entry.getEdgeLoad();
 			totalVmLoadOnCloud += entry.getCloudLoad();
 			totalVmLoadOnMobile += entry.getMobileLoad();
+			totalEnergyConsumedOnMobile += entry.getEnergyConsumedOnMobile();
+			totalEnergyConsumedOnEDGE += entry.getEnergyConsumptionOnEdge();
 			if (fileLogEnabled && SimSettings.getInstance().getVmLoadLogInterval() != 0)
 				appendToFile(vmLoadBW, entry.toString());
 		}
@@ -594,7 +646,7 @@ public class SimLogger {
 
 					locationBW.write(time.toString());
 					for (int i = 0; i < locationInfo.length; i++)
-						locationBW.write(SimSettings.DELIMITER + Integer.toString(i) + "-" +  locationInfo[i]);
+						locationBW.write(SimSettings.DELIMITER + Integer.toString(i) + "-" + locationInfo[i]);
 
 					locationBW.newLine();
 				}
@@ -895,6 +947,27 @@ public class SimLogger {
 				+ String.format("%.6f", totalVmLoadOnCloud / (double) vmLoadList.size()) + "/"
 				+ String.format("%.6f", totalVmLoadOnMobile / (double) vmLoadList.size()));
 
+		/**
+		 * sample output: average energy consumption on Mobile
+		 */
+		if (totalEnergyConsumedOnMobile != 0) {
+			printLine(
+					"average energy consumption on Mobile: "
+							+ String.format("%.6f",
+									totalEnergyConsumedOnMobile / (double) vmLoadList.stream()
+											.filter(x -> x.getEnergyConsumedOnMobile() != 0).toList().size())
+							+ " [Wh]"); // consideriamo solo le VM che hanno consumato energia
+		}
+
+		if (totalEnergyConsumedOnEDGE != 0) {
+			printLine(
+					"average energy consumption on **********EDGE: "
+							+ String.format("%.6f",
+									totalEnergyConsumedOnEDGE / (double) vmLoadList.stream()
+											.filter(x -> x.getEnergyConsumptionOnEdge() != 0).toList().size())
+							+ " [Wh]"); // consideriamo solo le VM che hanno consumato energia
+		}
+
 		printLine("average cost: " + cost[numOfAppTypes] / completedTask[numOfAppTypes] + "$");
 		printLine("average overhead: "
 				+ orchestratorOverhead[numOfAppTypes] / (failedTask[numOfAppTypes] + completedTask[numOfAppTypes])
@@ -1120,11 +1193,30 @@ class VmLoadLogItem {
 	private double vmLoadOnCloud;
 	private double vmLoadOnMobile;
 
+	private double energyConsumptionOnEdge;
+	private double energyConsumptionOnCloud;
+	private double energyConsumptionOnMobile;
+
 	VmLoadLogItem(double _time, double _vmLoadOnEdge, double _vmLoadOnCloud, double _vmLoadOnMobile) {
 		time = _time;
 		vmLoadOnEdge = _vmLoadOnEdge;
 		vmLoadOnCloud = _vmLoadOnCloud;
 		vmLoadOnMobile = _vmLoadOnMobile;
+
+		energyConsumptionOnCloud = 0;
+		energyConsumptionOnEdge = 0;
+		energyConsumptionOnMobile = 0;
+	}
+
+	VmLoadLogItem(double _time, double _vmLoadOnEdge, double _vmLoadOnCloud, double _vmLoadOnMobile,
+			double _energyConsumptionOnEdge, double _energyConsumptionOnCloud, double _energyConsumptionOnMobile) {
+		time = _time;
+		vmLoadOnEdge = _vmLoadOnEdge;
+		vmLoadOnCloud = _vmLoadOnCloud;
+		vmLoadOnMobile = _vmLoadOnMobile;
+		energyConsumptionOnEdge = _energyConsumptionOnEdge;
+		energyConsumptionOnCloud = _energyConsumptionOnCloud;
+		energyConsumptionOnMobile = _energyConsumptionOnMobile;
 	}
 
 	public double getEdgeLoad() {
@@ -1139,14 +1231,30 @@ class VmLoadLogItem {
 		return vmLoadOnMobile;
 	}
 
+	public double getEnergyConsumedOnMobile() {
+		return energyConsumptionOnMobile;
+	}
+
+	public double getEnergyConsumptionOnEdge() {
+		return energyConsumptionOnEdge;
+	}
+
 	public static String getHeader() {
 		return "Time" + SimSettings.DELIMITER + "VmLoadOnEdge" + SimSettings.DELIMITER + "VmLoadOnCloud"
 				+ SimSettings.DELIMITER + "VmLoadOnMobile";
 	}
 
+	public String toStringLabel() {
+		return "time(LOGICAL)" + // FIXME logical ??
+				SimSettings.DELIMITER + "LoadOnEdge" + SimSettings.DELIMITER + "LoadOnCloud" + SimSettings.DELIMITER
+				+ "LoadOnMobile" + SimSettings.DELIMITER + "energyConsumptionOnEdge" + SimSettings.DELIMITER
+				+ "energyConsumptionOnCloud" + SimSettings.DELIMITER + "energyConsumptionOnMobile";
+	}
+
 	public String toString() {
 		return time + SimSettings.DELIMITER + vmLoadOnEdge + SimSettings.DELIMITER + vmLoadOnCloud
-				+ SimSettings.DELIMITER + vmLoadOnMobile;
+				+ SimSettings.DELIMITER + vmLoadOnMobile + SimSettings.DELIMITER + energyConsumptionOnEdge
+				+ SimSettings.DELIMITER + energyConsumptionOnCloud + SimSettings.DELIMITER + energyConsumptionOnMobile;
 	}
 }
 
@@ -1195,7 +1303,8 @@ class LogItem {
 	private int vmType;
 	private int taskType;
 	private int taskLenght;
-	private int taskInputType;
+//	private int taskInputType;
+	private int taskInputSize;
 	private int taskOutputSize;
 	private double taskStartTime;
 	private double taskEndTime;
@@ -1215,19 +1324,31 @@ class LogItem {
 	private double orchestratorOverhead;
 	private boolean isInWarmUpPeriod;
 
-	LogItem(int _deviceId, int _taskType, int _taskLenght, int _taskInputType, int _taskOutputSize) {
+//	LogItem(int _deviceId, int _taskType, int _taskLenght, int _taskInputType, int _taskInputSize, int _taskOutputSize) {
+	LogItem(int _deviceId, int _taskType, int _taskLenght, int _taskInputSize, int _taskOutputSize) {
 		deviceId = _deviceId;
 		taskType = _taskType;
 		taskLenght = _taskLenght;
-		taskInputType = _taskInputType;
+//		taskInputType = _taskInputType;
+		taskInputSize = _taskInputSize;
 		taskOutputSize = _taskOutputSize;
 		networkError = NETWORK_ERRORS.NONE;
 		status = SimLogger.TASK_STATUS.CREATED;
 		taskEndTime = 0;
 	}
 
-	public void taskStarted(double time) {
+	public void taskStarted(double time, int deviceId) {
 		taskStartTime = time;
+		if (SimSettings.getInstance().IS_ENERGY) {
+			MobileHostEnergy host = ((MobileHostEnergy) SimManager.getInstance().getMobileServerManager()
+					.getDatacenter().getHostList().get(deviceId));
+			double energyLevel = host.getEnergyModel().getBatteryLevelWattHour();
+			double energyLevelperc = host.getEnergyModel().getBatteryLevelPercentage();
+			double energyMax = host.getEnergyModel().getBatteryCapacity();
+
+			taskStartDeviceEnergy = energyLevel;
+			taskStartDeviceEnergyPerc = energyLevelperc;
+		}
 		status = SimLogger.TASK_STATUS.UPLOADING;
 
 		if (time < SimSettings.getInstance().getWarmUpPeriod())
@@ -1437,13 +1558,31 @@ class LogItem {
 	public int getTaskType() {
 		return taskType;
 	}
+	
+	
 
 	public String toString(int taskId) {
-		String result = taskId + SimSettings.DELIMITER + deviceId + SimSettings.DELIMITER + datacenterId
-				+ SimSettings.DELIMITER + hostId + SimSettings.DELIMITER + vmId + SimSettings.DELIMITER + vmType
-				+ SimSettings.DELIMITER + taskType + SimSettings.DELIMITER + taskLenght + SimSettings.DELIMITER
-				+ taskInputType + SimSettings.DELIMITER + taskOutputSize + SimSettings.DELIMITER + taskStartTime
-				+ SimSettings.DELIMITER + taskEndTime + SimSettings.DELIMITER;
+		/*
+		 * String result = taskId + SimSettings.DELIMITER + deviceId +
+		 * SimSettings.DELIMITER + datacenterId + SimSettings.DELIMITER + hostId +
+		 * SimSettings.DELIMITER + vmId + SimSettings.DELIMITER + vmType +
+		 * SimSettings.DELIMITER + taskType + SimSettings.DELIMITER + taskLenght +
+		 * SimSettings.DELIMITER + taskInputType + SimSettings.DELIMITER +
+		 * taskOutputSize + SimSettings.DELIMITER + taskStartTime +
+		 * SimSettings.DELIMITER + taskEndTime + SimSettings.DELIMITER;
+		 */
+
+		String s = "FAILED";
+		if (status == SimLogger.TASK_STATUS.COMLETED)
+			s = "COMPLETED";
+
+		String result = taskId + SimSettings.DELIMITER + s + SimSettings.DELIMITER + deviceId + SimSettings.DELIMITER
+				+ datacenterId + SimSettings.DELIMITER + hostId + SimSettings.DELIMITER + vmId + SimSettings.DELIMITER
+				+ vmType + SimSettings.DELIMITER + taskType + SimSettings.DELIMITER + taskLenght + SimSettings.DELIMITER
+				+ taskInputSize + SimSettings.DELIMITER + taskOutputSize + SimSettings.DELIMITER + taskStartTime
+				+ SimSettings.DELIMITER + taskEndTime + SimSettings.DELIMITER + taskStartDeviceEnergy
+				+ SimSettings.DELIMITER + taskEndDeviceEnergy + SimSettings.DELIMITER + taskStartDeviceEnergyPerc
+				+ SimSettings.DELIMITER + taskEndDeviceEnergyPerc + SimSettings.DELIMITER;
 
 		if (status == SimLogger.TASK_STATUS.COMLETED) {
 			result += getNetworkDelay() + SimSettings.DELIMITER;
@@ -1496,5 +1635,30 @@ class LogItem {
 		 */
 		return result;
 	}
+
+	public void taskFailedDueToDeviceDeath(double time) {
+		if (SimSettings.getInstance().IS_ENERGY)
+			setEndTimeAndEnergy(time, deviceId);
+		else
+			taskEndTime = time;
+		status = SimLogger.TASK_STATUS.FAILED_DUE_TO_DEVICE_DEATH;
+	}
+
+	private void setEndTimeAndEnergy(double time, int deviceid) {
+		taskEndTime = time;
+		MobileHostEnergy host = ((MobileHostEnergy) SimManager.getInstance().getMobileServerManager().getDatacenter()
+				.getHostList().get(deviceId));
+		double energyLevel = host.getEnergyModel().getBatteryLevelWattHour();
+		double energyLevelperc = host.getEnergyModel().getBatteryLevelPercentage();
+		double energyMax = host.getEnergyModel().getBatteryCapacity();
+
+		taskEndDeviceEnergy = energyLevel;
+		taskEndDeviceEnergyPerc = energyLevelperc;
+	}
+
+	private double taskStartDeviceEnergy;
+	private double taskEndDeviceEnergy = 0;
+	private double taskStartDeviceEnergyPerc;
+	private double taskEndDeviceEnergyPerc = 0;
 
 }

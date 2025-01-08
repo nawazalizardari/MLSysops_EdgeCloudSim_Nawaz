@@ -13,8 +13,10 @@
 package edu.boun.edgecloudsim.edge_server;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.cloudbus.cloudsim.CloudletSchedulerTimeShared;
 import org.cloudbus.cloudsim.Datacenter;
@@ -214,5 +216,42 @@ public class DefaultEdgeServerManager extends EdgeServerManager{
 		}
 
 		return hostList;
+	}
+
+//	@Override
+//	public double getEnergyConsumption(double momentOfInterest) {
+//		// TODO Auto-generated method stub
+//		return 0;
+//	}
+	
+	@Override
+	public double getEnergyConsumption(double momentOfInterest) {
+		HashMap<Integer, String> mapHostEnergyConsumed = new HashMap<>();
+		HashMap<Integer, String> mapHostDied = new HashMap<>();
+		AtomicReference<Double> energyEdgeConsumed = new AtomicReference<>((double) 0);
+		
+		
+		
+		for (Datacenter datacenter : this.getDatacenterList()) {
+		    for (Host host : datacenter.getHostList()) {
+		        if (host instanceof EdgeHostEnergy) {
+		            EdgeHostEnergy edgeHost = (EdgeHostEnergy) host;
+		            if (!edgeHost.isDead()) {
+		                double ec = edgeHost.energyConsumption(momentOfInterest);
+		                ec += energyEdgeConsumed.get();
+		                energyEdgeConsumed.set(ec);
+		                mapHostEnergyConsumed.put(datacenter.getId(), 
+		                    "ENERGY CONSUMED HOST_ID EDGE[" + datacenter.getId() + "] " + 
+		                    "battery: " + edgeHost.getBatteryLevel() + " energy: " + ec);
+		            } else {
+		                mapHostDied.put(datacenter.getId(), 
+		                    "DEAD HOST_ID EDGE[" + datacenter.getId() + "]");
+		            }
+		        }
+		    }
+		}		
+		
+
+		return energyEdgeConsumed.get();
 	}
 }

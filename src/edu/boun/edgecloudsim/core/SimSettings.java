@@ -42,8 +42,8 @@ public class SimSettings {
 
 	// enumarations for the VM types
 	public static enum NETWORK_DELAY_TYPES {
-		WLAN_DELAY, MAN_DELAY, WAN_DELAY, FIVEG_DELAY,
-	 GSM_DELAY }
+		WLAN_DELAY, MAN_DELAY, WAN_DELAY, FIVEG_DELAY, GSM_DELAY
+	}
 
 	// predifined IDs for the components.
 	public static final int CLOUD_DATACENTER_ID = 1000;
@@ -139,15 +139,96 @@ public class SimSettings {
 	 * @param propertiesFile
 	 * @return
 	 */
+
 	public boolean initialize(String propertiesFile, String edgeDevicesFile, String applicationsFile) {
+		return initialize(propertiesFile, edgeDevicesFile, applicationsFile, false);
+	}
+
+	public boolean initialize(String propertiesFile, String edgeDevicesFile, String applicationsFile,
+			boolean isEnergy) {
+
 		boolean result = false;
 		InputStream input = null;
+		IS_ENERGY = isEnergy;
+
 		try {
 			input = new FileInputStream(propertiesFile);
 
 			// load a properties file
 			Properties prop = new Properties();
 			prop.load(input);
+
+			if (isEnergy) {
+				/* PROPERTIES */
+
+				// mobile devices new properties
+				MIN_RAM_FOR_VM = Integer.parseInt(prop.getProperty("min_ram_for_mobile_vm"));
+				MIN_CORE_FOR_VM = Integer.parseInt(prop.getProperty("min_core_for_mobile_vm"));
+				MIN_MIPS_FOR_VM = Integer.parseInt(prop.getProperty("min_mips_for_mobile_vm"));
+				MIN_STORAGE_FOR_VM = Integer.parseInt(prop.getProperty("min_storage_for_mobile_vm"));
+
+				MAX_RAM_FOR_VM = Integer.parseInt(prop.getProperty("max_ram_for_mobile_vm"));
+				MAX_CORE_FOR_VM = Integer.parseInt(prop.getProperty("max_core_for_mobile_vm"));
+				MAX_MIPS_FOR_VM = Integer.parseInt(prop.getProperty("max_mips_for_mobile_vm"));
+				MAX_STORAGE_FOR_VM = Integer.parseInt(prop.getProperty("max_storage_for_mobile_vm"));
+
+				// energy device
+				ENERGYCONSUMPTIONMAX_CLOUD = Double
+						.parseDouble(prop.getProperty("energy_consumption_max_for_cloud_vm"));
+				ENERGYCONSUMPTIONIDLE_CLOUD = Double
+						.parseDouble(prop.getProperty("energy_consumption_idle_for_cloud_vm"));
+
+				// energy device
+				BATTERY = Boolean.parseBoolean(prop.getProperty("battery"));
+				MIN_BATT_PERC = Double.parseDouble(prop.getProperty("min_percentage"));
+				MAX_BATT_PERC = Double.parseDouble(prop.getProperty("max_percentage"));
+
+				BATTERYCAPACITY = Double.parseDouble(prop.getProperty("batteryCapacity"));
+				INITIALBATTERYLEVEL = Double.parseDouble(prop.getProperty("initialBatteryLevel"));
+
+				ENERGYCONSUMPTIONMAX_MOBILE = Double
+						.parseDouble(prop.getProperty("energy_consumption_max_for_mobile_vm"));
+				ENERGYCONSUMPTIONIDLE_MOBILE = Double
+						.parseDouble(prop.getProperty("energy_consumption_idle_for_mobile_vm"));
+
+				// energy transmission
+
+				// Nanojoules per second (per bit) to Watt Hour (per bit)
+				WANWATTHOURPERBIT = (double) 2.7777777777778e-13
+						* Double.parseDouble(prop.getProperty("wan_nanojoules_per_bit"));
+
+				MANWATTHOURPERBIT = (double) 2.7777777777778e-13
+						* Double.parseDouble(prop.getProperty("man_nanojoules_per_bit"));
+
+				WIFIDEVICETRANSMISSIONWATTHOURPERBIT = (double) 2.7777777777778e-13
+						* Double.parseDouble(prop.getProperty("wifi_device_transmission_nanojoules_per_bit"));
+				WIFIDEVICERECEPTIONWATTHOURPERBIT = (double) 2.7777777777778e-13
+						* Double.parseDouble(prop.getProperty("wifi_device_reception_nanojoules_per_bit"));
+				WIFIACCESSPOINTTRANSMISSIONWATTHOURPERBIT = (double) 2.7777777777778e-13
+						* Double.parseDouble(prop.getProperty("wifi_access_point_transmission_nanojoules_per_bit"));
+				WIFIACCESSPOINTRECEPTIONWATTHOURPERBIT = (double) 2.7777777777778e-13
+						* Double.parseDouble(prop.getProperty("wifi_access_point_reception_nanojoules_per_bit"));
+
+				CELLULARDEVICETRANSMISSIONWATTHOURPERBIT = (double) 2.7777777777778e-13
+						* Double.parseDouble(prop.getProperty("cellular_device_transmission_nanojoules_per_bit"));
+				CELLULARDEVICERECEPTIONWATTHOURPERBIT = (double) 2.7777777777778e-13
+						* Double.parseDouble(prop.getProperty("cellular_device_reception_nanojoules_per_bit"));
+				CELLULARBASESTATIONWATTHOURPERBITUPLINK = (double) 2.7777777777778e-13
+						* Double.parseDouble(prop.getProperty("cellular_base_station_nanojoules_per_bit_up_link"));
+				CELLULARBASESTATIONWATTHOURPERBITDOWNLINK = (double) 12.7777777777778e-13
+						* Double.parseDouble(prop.getProperty("cellular_base_station_nanojoules_per_bit_down_link"));
+				CONNECTIVITY_TYPE = prop.getProperty("connectivity_type").toString();
+			} else {
+
+				MIN_RAM_FOR_VM = Integer.parseInt(prop.getProperty("ram_for_mobile_vm"));
+				MIN_CORE_FOR_VM = Integer.parseInt(prop.getProperty("core_for_mobile_vm"));
+				MIN_MIPS_FOR_VM = Integer.parseInt(prop.getProperty("mips_for_mobile_vm"));
+				MIN_STORAGE_FOR_VM = Integer.parseInt(prop.getProperty("storage_for_mobile_vm"));
+				MAX_RAM_FOR_VM = Integer.parseInt(prop.getProperty("ram_for_mobile_vm"));
+				MAX_CORE_FOR_VM = Integer.parseInt(prop.getProperty("core_for_mobile_vm"));
+				MAX_MIPS_FOR_VM = Integer.parseInt(prop.getProperty("mips_for_mobile_vm"));
+				MAX_STORAGE_FOR_VM = Integer.parseInt(prop.getProperty("storage_for_mobile_vm"));
+			} /**************************/
 
 			SIMULATION_TIME = (double) 60 * Double.parseDouble(prop.getProperty("simulation_time")); // seconds
 			WARM_UP_PERIOD = (double) 60 * Double.parseDouble(prop.getProperty("warm_up_period")); // seconds
@@ -211,20 +292,33 @@ public class SimSettings {
 			if (!EDGE_DEVICE_FILE.isEmpty())
 				edgeDevicesFile = EDGE_DEVICE_FILE;
 
-			WIFIDEVICETRANSMISSIONWATTHOURPERBIT = (double) 2.7777777777778e-13
-					* Double.parseDouble(prop.getProperty("wifi_device_transmission_nanojoules_per_bit"));
-			WIFIDEVICERECEPTIONWATTHOURPERBIT = (double) 2.7777777777778e-13
-					* Double.parseDouble(prop.getProperty("wifi_device_reception_nanojoules_per_bit"));
-
-			WIFIACCESSPOINTTRANSMISSIONWATTHOURPERBIT = (double) 2.7777777777778e-13
-					* Double.parseDouble(prop.getProperty("wifi_access_point_transmission_nanojoules_per_bit"));
-			WIFIACCESSPOINTRECEPTIONWATTHOURPERBIT = (double) 2.7777777777778e-13
-					* Double.parseDouble(prop.getProperty("wifi_access_point_reception_nanojoules_per_bit"));
-
-			CELLULARDEVICETRANSMISSIONWATTHOURPERBIT = (double) 2.7777777777778e-13
-					* Double.parseDouble(prop.getProperty("cellular_device_transmission_nanojoules_per_bit"));
-			CELLULARDEVICERECEPTIONWATTHOURPERBIT = (double) 2.7777777777778e-13
-					* Double.parseDouble(prop.getProperty("cellular_device_reception_nanojoules_per_bit"));
+			/*
+			 * WIFIDEVICETRANSMISSIONWATTHOURPERBIT = (double) 2.7777777777778e-13
+			 * Double.parseDouble(prop.getProperty(
+			 * "wifi_device_transmission_nanojoules_per_bit"));
+			 * WIFIDEVICERECEPTIONWATTHOURPERBIT = (double) 2.7777777777778e-13
+			 * Double.parseDouble(prop.getProperty(
+			 * "wifi_device_reception_nanojoules_per_bit"));
+			 * 
+			 * WIFIACCESSPOINTTRANSMISSIONWATTHOURPERBIT = (double) 2.7777777777778e-13
+			 * Double.parseDouble(prop.getProperty(
+			 * "wifi_access_point_transmission_nanojoules_per_bit"));
+			 * WIFIACCESSPOINTRECEPTIONWATTHOURPERBIT = (double) 2.7777777777778e-13
+			 * Double.parseDouble(prop.getProperty(
+			 * "wifi_access_point_reception_nanojoules_per_bit"));
+			 * 
+			 * CELLULARDEVICETRANSMISSIONWATTHOURPERBIT = (double) 2.7777777777778e-13
+			 * Double.parseDouble(prop.getProperty(
+			 * "cellular_device_transmission_nanojoules_per_bit"));
+			 * CELLULARDEVICERECEPTIONWATTHOURPERBIT = (double) 2.7777777777778e-13
+			 * Double.parseDouble(prop.getProperty(
+			 * "cellular_device_reception_nanojoules_per_bit"));
+			 * 
+			 * BATTERY = Boolean.parseBoolean(prop.getProperty("battery")); MIN_BATT_PERC =
+			 * Double.parseDouble(prop.getProperty("min_percentage")); MAX_BATT_PERC =
+			 * Double.parseDouble(prop.getProperty("max_percentage"));
+			 * 
+			 */
 
 		} catch (IOException ex) {
 			ex.printStackTrace();
@@ -769,11 +863,75 @@ public class SimSettings {
 		return CELLULARDEVICERECEPTIONWATTHOURPERBIT;
 	}
 
+	public boolean isBATTERY() {
+		return BATTERY;
+	}
+
+	public double getMIN_BATT_PERC() {
+		return MIN_BATT_PERC;
+	}
+
+	public double getBATTERYCAPACITY() {
+		return BATTERYCAPACITY;
+	}
+
+	public double getMAX_BATT_PERC() {
+		return MAX_BATT_PERC;
+	}
+
+	public double getEnergyConsumpitonMax_mobile() {
+		return ENERGYCONSUMPTIONMAX_MOBILE;
+	}
+
+	public double getEnergyConsumptionIdle_mobile() {
+		return ENERGYCONSUMPTIONIDLE_MOBILE;
+	}
+
+	public double getEnergyConsumpitonMax_cloud() {
+		return ENERGYCONSUMPTIONMAX_CLOUD;
+	}
+
+	public double getEnergyConsumptionIdle_cloud() {
+		return ENERGYCONSUMPTIONIDLE_CLOUD;
+	}
+
+	public boolean IS_ENERGY; // minutes unit in properties file
+
+	private int MIN_CORE_FOR_VM;
+	private int MIN_MIPS_FOR_VM; // MIPS
+	private int MIN_RAM_FOR_VM; // MB
+	private int MIN_STORAGE_FOR_VM; // Byte
+
+	private int MAX_CORE_FOR_VM;
+	private int MAX_MIPS_FOR_VM; // MIPS
+	private int MAX_RAM_FOR_VM; // MB
+	private int MAX_STORAGE_FOR_VM; // Byte
+
+	private double ENERGYCONSUMPTIONMAX_CLOUD;
+	private double ENERGYCONSUMPTIONIDLE_CLOUD;
+
+	private double BATTERYCAPACITY;
+	private double INITIALBATTERYLEVEL; // FIXME unused
+
+	private double ENERGYCONSUMPTIONMAX_MOBILE;
+	private double ENERGYCONSUMPTIONIDLE_MOBILE;
+
+	private double WANWATTHOURPERBIT;
+	private double MANWATTHOURPERBIT;
+
 	private double WIFIDEVICETRANSMISSIONWATTHOURPERBIT;
 	private double WIFIDEVICERECEPTIONWATTHOURPERBIT;
 	private double WIFIACCESSPOINTTRANSMISSIONWATTHOURPERBIT;
 	private double WIFIACCESSPOINTRECEPTIONWATTHOURPERBIT;
 	private double CELLULARDEVICETRANSMISSIONWATTHOURPERBIT;
 	private double CELLULARDEVICERECEPTIONWATTHOURPERBIT;
+	private double CELLULARBASESTATIONWATTHOURPERBITUPLINK;
+	private double CELLULARBASESTATIONWATTHOURPERBITDOWNLINK;
+
+	private boolean BATTERY;
+	private double MIN_BATT_PERC;
+	private double MAX_BATT_PERC = 100;
+
+	private String CONNECTIVITY_TYPE;
 
 }
