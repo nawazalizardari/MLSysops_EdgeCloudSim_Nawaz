@@ -86,7 +86,8 @@ public class SimManagerEnergy extends SimManager {
     			case CREATE_TASK:
     				try {
     					TaskProperty edgeTask = (TaskProperty) ev.getData();
-    					Task task = ((VehicularMobileDeviceManager)super.getMobileDeviceManager()).submitTaskEnergy(edgeTask);
+//    					getMobileDeviceManager().submitTask(edgeTask);
+    					Task task = ((VehicularMobileDeviceManager)getMobileDeviceManager()).submitTask(edgeTask);
 						if(task == null)
 							return; // task is blocked because mobileHost is dead, no other action is needed here
     					calculateNetConsume(task,SimUtils.TRANSMISSION);

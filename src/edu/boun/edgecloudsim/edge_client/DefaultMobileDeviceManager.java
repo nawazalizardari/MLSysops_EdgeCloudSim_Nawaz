@@ -167,7 +167,7 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 		}
 	}
 
-	public void submitTask(TaskProperty edgeTask) {
+	public Task submitTask(TaskProperty edgeTask) {
 		NetworkModel networkModel = SimManager.getInstance().getNetworkModel();
 		
 		//create a task
@@ -231,6 +231,7 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 			SimLogger.printLine("Unknown nextHopId! Terminating simulation...");
 			System.exit(1);
 		}
+		return task;
 	}
 	
 	private void submitTaskToVm(Task task, double delay, int datacenterId) {

@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 import org.cloudbus.cloudsim.CloudletSchedulerTimeShared;
 import org.cloudbus.cloudsim.Datacenter;
@@ -135,6 +136,7 @@ public class VehicularEdgeServerManager extends EdgeServerManager {
 		// for each datacenter...
 		for (int i = 0; i < localDatacenters.size(); i++) {
 			List<? extends Host> list = localDatacenters.get(i).getHostList();
+			hostsNotDied(list);
 			// for each host...
 			for (int hostIndex = 0; hostIndex < list.size(); hostIndex++) {
 				List<EdgeVM> vmArray = SimManager.getInstance().getEdgeServerManager().getVmList(hostCounter);
@@ -148,6 +150,12 @@ public class VehicularEdgeServerManager extends EdgeServerManager {
 			}
 		}
 		return totalUtilization / (double) vmCounter;
+	}
+
+	private List<? extends Host> hostsNotDied(List<? extends Host> list){ 
+		return list.stream()
+				.filter(host -> !(host instanceof EdgeHostEnergy && ((EdgeHostEnergy) host).isDead()))
+				.collect(Collectors.toList());
 	}
 
 	private Datacenter createDatacenter(int index, Element datacenterElement) throws Exception {

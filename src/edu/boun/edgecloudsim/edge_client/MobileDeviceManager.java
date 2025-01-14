@@ -21,5 +21,5 @@ public abstract class MobileDeviceManager  extends DatacenterBroker {
 	 */
 	public abstract UtilizationModel getCpuUtilizationModel();
 	
-	public abstract void submitTask(TaskProperty edgeTask);
+	public abstract Task submitTask(TaskProperty edgeTask);
 }

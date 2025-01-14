@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 import org.cloudbus.cloudsim.CloudletSchedulerTimeShared;
 import org.cloudbus.cloudsim.Datacenter;
@@ -37,9 +38,12 @@ import edu.boun.edgecloudsim.edge_client.mobile_processing_unit.MobileHostEnergy
 import edu.boun.edgecloudsim.edge_client.mobile_processing_unit.MobileServerManager;
 import edu.boun.edgecloudsim.edge_client.mobile_processing_unit.MobileVM;
 import edu.boun.edgecloudsim.edge_client.mobile_processing_unit.MobileVmAllocationPolicy_Custom;
+import edu.boun.edgecloudsim.energy.DefaultEnergyComputingModel;
 
 public class VehicularMobileServerManager extends MobileServerManager {
 	private int numOfMobileDevices = 0;
+	private Double maxActiveConsumption; // todo Ramona Valori per calcolo energia
+	private Double idleConsumption; // todo Ramona Valori per calcolo energia
 
 	public VehicularMobileServerManager(int _numOfMobileDevices) {
 		numOfMobileDevices = _numOfMobileDevices;
@@ -47,6 +51,9 @@ public class VehicularMobileServerManager extends MobileServerManager {
 
 	@Override
 	public void initialize() {
+		// random double value
+		maxActiveConsumption = SimSettings.getInstance().getEnergyConsumpitonMax_mobile();
+		idleConsumption = SimSettings.getInstance().getEnergyConsumptionIdle_mobile();
 	}
 
 	@Override
@@ -98,6 +105,7 @@ public class VehicularMobileServerManager extends MobileServerManager {
 		double vmCounter = 0;
 
 		List<? extends Host> list = localDatacenter.getHostList();
+		list = hostsNotDied(list);
 		// for each host...
 		for (int hostIndex = 0; hostIndex < list.size(); hostIndex++) {
 			List<MobileVM> vmArray = SimManager.getInstance().getMobileServerManager().getVmList(hostIndex);
@@ -110,6 +118,15 @@ public class VehicularMobileServerManager extends MobileServerManager {
 		}
 
 		return totalUtilization / vmCounter;
+	}
+
+	private List<? extends Host> hostsNotDied(List<? extends Host> list) {
+		return list.stream().filter(host -> {
+			if (host instanceof MobileHostEnergy) {
+				return !((MobileHostEnergy) host).isDead();
+			}
+			return true;
+		}).collect(Collectors.toList());
 	}
 
 	private Datacenter createDatacenter(int index) throws Exception {
@@ -147,9 +164,11 @@ public class VehicularMobileServerManager extends MobileServerManager {
 		// Here are the steps needed to create a PowerDatacenter:
 		// 1. We need to create a list to store one or more Machines
 		List<MobileHost> hostList = new ArrayList<MobileHost>();
+		DefaultEnergyComputingModel energyModel;// = new DefaultEnergyComputingModel(numOfMobileDevices,
+												// maxActiveConsumption, idleConsumption);
 
 		for (int i = 0; i < numOfMobileDevices; i++) {
-
+			energyModel = new DefaultEnergyComputingModel(numOfMobileDevices, maxActiveConsumption, idleConsumption);
 			int numOfCores = SimSettings.getInstance().getCoreForMobileVM();
 			double mips = SimSettings.getInstance().getMipsForMobileVM();
 			int ram = SimSettings.getInstance().getRamForMobileVM();
@@ -169,11 +188,20 @@ public class VehicularMobileServerManager extends MobileServerManager {
 
 			// 4. Create Hosts with its id and list of PEs and add them to the list of
 			// machines
-			MobileHost host = new MobileHost(
+			/*
+			 * MobileHost host = new MobileHost( // Hosts should have unique IDs, so create
+			 * Mobile Hosts after Edge+Cloud Hosts i +
+			 * SimSettings.getInstance().getNumOfEdgeHosts() +
+			 * SimSettings.getInstance().getNumOfCloudHost(), new RamProvisionerSimple(ram),
+			 * new BwProvisionerSimple(bandwidth), // kbps storage, peList, new
+			 * VmSchedulerSpaceShared(peList));
+			 */
+			MobileHostEnergy host = new MobileHostEnergy(
 					// Hosts should have unique IDs, so create Mobile Hosts after Edge+Cloud Hosts
 					i + SimSettings.getInstance().getNumOfEdgeHosts() + SimSettings.getInstance().getNumOfCloudHost(),
 					new RamProvisionerSimple(ram), new BwProvisionerSimple(bandwidth), // kbps
-					storage, peList, new VmSchedulerSpaceShared(peList));
+					storage, peList, new VmSchedulerSpaceShared(peList), energyModel,
+					SimSettings.getInstance().getBATTERYCAPACITY());
 
 			host.setMobileDeviceId(i);
 			hostList.add(host);

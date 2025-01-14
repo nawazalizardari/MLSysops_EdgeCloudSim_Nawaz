@@ -126,7 +126,7 @@ public class VehicularMainApp {
 					SS.getEnergyConsumptionIdle_mobile());
 
 			// Generate EdgeCloudSim Simulation Manager
-			SimManagerEnergy manager = new SimManagerEnergy(sampleFactory, numOfMobileDevice, simulationScenario,
+			SimManager manager = new SimManager(sampleFactory, numOfMobileDevice, simulationScenario,
 					orchestratorPolicy);
 
 			if (orchestratorPolicy.equals("AI_TRAINER")) {

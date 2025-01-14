@@ -13,26 +13,33 @@
 package edu.boun.edgecloudsim.core;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
+import org.cloudbus.cloudsim.Datacenter;
 import org.cloudbus.cloudsim.Host;
 import org.cloudbus.cloudsim.core.CloudSim;
 import org.cloudbus.cloudsim.core.SimEntity;
 import org.cloudbus.cloudsim.core.SimEvent;
 
 import edu.boun.edgecloudsim.edge_orchestrator.EdgeOrchestrator;
+import edu.boun.edgecloudsim.edge_server.EdgeHostEnergy;
 import edu.boun.edgecloudsim.edge_server.EdgeServerManager;
 import edu.boun.edgecloudsim.edge_server.EdgeVmAllocationPolicy_Custom;
-import edu.boun.edgecloudsim.applications.sample_app5.VehicularEdgeServerManager;
-import edu.boun.edgecloudsim.applications.sample_app5.VehicularNetworkModel;
 import edu.boun.edgecloudsim.cloud_server.CloudServerManager;
+import edu.boun.edgecloudsim.core.SimSettings.NETWORK_DELAY_TYPES;
 import edu.boun.edgecloudsim.edge_client.MobileDeviceManager;
+import edu.boun.edgecloudsim.edge_client.Task;
+import edu.boun.edgecloudsim.edge_client.mobile_processing_unit.MobileHostEnergy;
 import edu.boun.edgecloudsim.edge_client.mobile_processing_unit.MobileServerManager;
 import edu.boun.edgecloudsim.mobility.MobilityModel;
 import edu.boun.edgecloudsim.task_generator.LoadGeneratorModel;
 import edu.boun.edgecloudsim.network.NetworkModel;
 import edu.boun.edgecloudsim.utils.TaskProperty;
+import edu.boun.edgecloudsim.utils.Coordinates;
+import edu.boun.edgecloudsim.utils.Location;
 import edu.boun.edgecloudsim.utils.SimLogger;
+import edu.boun.edgecloudsim.utils.SimUtils;
 
 public class SimManager extends SimEntity {
 	private static final int CREATE_TASK = 0;
@@ -55,6 +62,8 @@ public class SimManager extends SimEntity {
 	private MobileDeviceManager mobileDeviceManager;
 
 	private static SimManager instance = null;
+
+	List<Coordinates> coordinatesList = null;
 
 	public SimManager(ScenarioFactory _scenarioFactory, int _numOfMobileDevice, String _simScenario,
 			String _orchestratorPolicy) throws Exception {
@@ -99,7 +108,6 @@ public class SimManager extends SimEntity {
 		mobileDeviceManager = scenarioFactory.getMobileDeviceManager();
 		mobileDeviceManager.initialize();
 
-	
 		instance = this;
 	}
 
@@ -116,6 +124,7 @@ public class SimManager extends SimEntity {
 
 		// Start Edge Datacenters & Generate VMs
 		edgeServerManager.startDatacenters();
+		edgeServerManager.startDatacentersEnegy();
 		edgeServerManager.createVmList(mobileDeviceManager.getId());
 
 		// Start Edge Datacenters & Generate VMs
@@ -126,11 +135,9 @@ public class SimManager extends SimEntity {
 		mobileServerManager.startDatacenters();
 		mobileServerManager.createVmList(mobileDeviceManager.getId());
 
-		
 //		((VehicularNetworkModel) networkModel)
 //		.setEdgeServerManager((VehicularEdgeServerManager) scenarioFactory.getEdgeServerManager());
 
-		
 		CloudSim.startSimulation();
 	}
 
@@ -224,7 +231,10 @@ public class SimManager extends SimEntity {
 			case CREATE_TASK:
 				try {
 					TaskProperty edgeTask = (TaskProperty) ev.getData();
-					mobileDeviceManager.submitTask(edgeTask);
+					Task task = mobileDeviceManager.submitTask(edgeTask);
+					if (task == null)
+						return; // task is blocked because mobileHost is dead, no other action is needed here
+					calculateNetConsume(task, SimUtils.TRANSMISSION);
 				} catch (Exception e) {
 					e.printStackTrace();
 					System.exit(1);
@@ -240,7 +250,7 @@ public class SimManager extends SimEntity {
 			case GET_LOAD_LOG:
 				SimLogger.getInstance().addVmUtilizationLog(CloudSim.clock(), edgeServerManager.getAvgUtilization(),
 						cloudServerManager.getAvgUtilization(), mobileServerManager.getAvgUtilization());
-				
+
 				schedule(getId(), SimSettings.getInstance().getVmLoadLogInterval(), GET_LOAD_LOG);
 				break;
 			case PRINT_PROGRESS:
@@ -276,4 +286,74 @@ public class SimManager extends SimEntity {
 		cloudServerManager.terminateDatacenters();
 		mobileServerManager.terminateDatacenters();
 	}
+
+	public void calculateNetConsume(Task task, int flag) {
+		long size;
+		if (flag == SimUtils.TRANSMISSION) {
+//    		System.out.println("UPLOAD");
+			size = task.getCloudletFileSize();
+		} else {
+//    		System.out.println("DOWNLOAD");
+			size = task.getCloudletOutputSize();
+		}
+
+		int nexthop = getEdgeOrchestrator().getDeviceToOffload(task);
+
+		int mobileid = task.getMobileDeviceId();
+		Location loc_mobile = getMobilityModel().getLocation(mobileid, CloudSim.clock());
+
+		MobileHostEnergy host = ((MobileHostEnergy) getMobileServerManager().getDatacenter().getHostList()
+				.get(mobileid));
+
+		// for diagrams constructions
+		double energyConsumed = host.energyConsumption(CloudSim.clock());
+
+		if (coordinatesList == null) {
+			coordinatesList = new ArrayList<>();
+		}
+		coordinatesList.add(new Coordinates(loc_mobile.getXPos(), loc_mobile.getYPos(), host.isDead(), mobileid,
+				CloudSim.clock(), energyConsumed));
+
+		EdgeServerManager esm = getEdgeServerManager();
+
+		// GSM mobile to cloud OK
+		// WLAN mobile to edge OK
+
+		// MAN edge to edge ? TODO
+		// WAN edge to cloud ? TODO
+
+		switch (nexthop) {
+		case SimSettings.CLOUD_DATACENTER_ID: {
+			host.getEnergyModel().setConnectivityType(NETWORK_DELAY_TYPES.GSM_DELAY);
+//			System.out.println("-------TO---CLOUD");
+			break;
+		}
+		case SimSettings.MOBILE_DATACENTER_ID: { // DEVICE TO DEVICE ?
+//			System.out.println("-------TO---MOBILE");
+			host.getEnergyModel().setConnectivityType(NETWORK_DELAY_TYPES.GSM_DELAY);
+			break;
+		}
+		case SimSettings.GENERIC_EDGE_DEVICE_ID: {
+//			System.out.println("-------TO---EDGE");
+			host.getEnergyModel().setConnectivityType(NETWORK_DELAY_TYPES.WLAN_DELAY);
+			for (Datacenter d : esm.getDatacenterList()) {
+				EdgeHostEnergy edgehost = (EdgeHostEnergy) d.getHostList().get(0); // one host per datacenter
+				if (edgehost.getLocation().equals(loc_mobile)) {
+//					System.out.println("--------------"+locm.getXPos()+","+locm.getYPos());
+					edgehost.getEnergyModel().setConnectivityType(NETWORK_DELAY_TYPES.WLAN_DELAY);
+					edgehost.getEnergyModel().updatewirelessEnergyConsumption(size, flag);
+				}
+			}
+			break;
+		}
+		default:// TODO
+			host.getEnergyModel().setConnectivityType(NETWORK_DELAY_TYPES.WLAN_DELAY);
+			System.err.println("-------TO---????" + nexthop);
+			break;
+
+		}
+		host.getEnergyModel().updatewirelessEnergyConsumption(size, flag);
+
+	}
+
 }
