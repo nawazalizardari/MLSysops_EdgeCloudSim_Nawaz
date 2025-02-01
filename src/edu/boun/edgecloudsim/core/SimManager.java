@@ -35,6 +35,7 @@ import edu.boun.edgecloudsim.edge_client.mobile_processing_unit.MobileServerMana
 import edu.boun.edgecloudsim.mobility.MobilityModel;
 import edu.boun.edgecloudsim.task_generator.LoadGeneratorModel;
 import edu.boun.edgecloudsim.network.NetworkModel;
+import edu.boun.edgecloudsim.simulationvisualizer.IDiagrams;
 import edu.boun.edgecloudsim.utils.TaskProperty;
 import edu.boun.edgecloudsim.utils.Coordinates;
 import edu.boun.edgecloudsim.utils.Location;
@@ -64,6 +65,9 @@ public class SimManager extends SimEntity {
 	private static SimManager instance = null;
 
 	List<Coordinates> coordinatesList = null;
+
+	private IDiagrams iDiagrams;
+
 
 	public SimManager(ScenarioFactory _scenarioFactory, int _numOfMobileDevice, String _simScenario,
 			String _orchestratorPolicy) throws Exception {
@@ -123,8 +127,8 @@ public class SimManager extends SimEntity {
 		SimLogger.print(super.getName() + " is starting...");
 
 		// Start Edge Datacenters & Generate VMs
-		edgeServerManager.startDatacenters();
 		edgeServerManager.startDatacentersEnegy();
+		edgeServerManager.startDatacenters();
 		edgeServerManager.createVmList(mobileDeviceManager.getId());
 
 		// Start Edge Datacenters & Generate VMs
@@ -356,4 +360,11 @@ public class SimManager extends SimEntity {
 
 	}
 
+	
+
+	public void createDiagram(String scenarioName, String orchestretorPolicy) {
+		iDiagrams.generateEnergyCharts(coordinatesList, scenarioName, orchestretorPolicy);
+		iDiagrams.generateMapChart(coordinatesList, scenarioName, orchestretorPolicy);
+	}
+	
 }

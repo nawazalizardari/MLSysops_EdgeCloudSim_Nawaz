@@ -13,6 +13,8 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.cloudbus.cloudsim.Log;
 import org.cloudbus.cloudsim.core.CloudSim;
@@ -109,7 +111,7 @@ public class VehicularMainApp {
 				+ SS.getWarmUpPeriod() / 60 + " min) - #devices: " + numOfMobileDevice);
 		SimLogger.getInstance().simStarted(outputFolder,
 				"SIMRESULT_" + simulationScenario + "_" + orchestratorPolicy + "_" + numOfMobileDevice + "DEVICES");
-
+		SimManager manager = null;
 		try {
 			// First step: Initialize the CloudSim package. It should be called
 			// before creating any entities.
@@ -126,8 +128,7 @@ public class VehicularMainApp {
 					SS.getEnergyConsumptionIdle_mobile());
 
 			// Generate EdgeCloudSim Simulation Manager
-			SimManager manager = new SimManager(sampleFactory, numOfMobileDevice, simulationScenario,
-					orchestratorPolicy);
+			manager = new SimManager(sampleFactory, numOfMobileDevice, simulationScenario, orchestratorPolicy);
 
 			if (orchestratorPolicy.equals("AI_TRAINER")) {
 				SimLogger.disableFileLog();
@@ -152,11 +153,25 @@ public class VehicularMainApp {
 			System.exit(1);
 		}
 
+		if (manager != null)
+			manager.createDiagram(simulationScenario, orchestratorPolicy);
+
 		Date ScenarioEndDate = Calendar.getInstance().getTime();
 		now = df.format(ScenarioEndDate);
 		SimLogger.printLine("Scenario finished at " + now + ". It took "
 				+ SimUtils.getTimeDifference(ScenarioStartDate, ScenarioEndDate));
 		SimLogger.printLine("----------------------------------------------------------------------");
+
+		// Print initial energy values
+		// SimLogger.printLine("connectivity type " + SS.getCONNECTIVITY());
+		Map<String, Double> energyValue = new HashMap<>();
+
+		energyValue.put("BATTERYCAPACITY", SS.getBATTERYCAPACITY());
+		energyValue.put("ENERGYCONSUMPTIONMAX_MOBILE", SS.getEnergyConsumpitonMax_mobile());
+		energyValue.put("ENERGYCONSUMPTIONIDLE_MOBILE", SS.getEnergyConsumptionIdle_mobile());
+
+		energyValue.entrySet().stream().map(eValue -> eValue.getKey() + " : " + eValue.getValue())
+				.forEach(SimLogger::printLine);
 
 		// suggest garbage collector to run in order to decrease heap memory
 		System.gc();
