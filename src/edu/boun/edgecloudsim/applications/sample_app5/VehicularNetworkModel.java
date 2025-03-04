@@ -13,15 +13,12 @@ package edu.boun.edgecloudsim.applications.sample_app5;
 
 import java.util.List;
 
-import org.cloudbus.cloudsim.Datacenter;
-import org.cloudbus.cloudsim.Host;
 import org.cloudbus.cloudsim.core.CloudSim;
 
 import edu.boun.edgecloudsim.core.SimManager;
 import edu.boun.edgecloudsim.core.SimSettings;
 import edu.boun.edgecloudsim.core.SimSettings.NETWORK_DELAY_TYPES;
 import edu.boun.edgecloudsim.edge_client.Task;
-import edu.boun.edgecloudsim.edge_server.EdgeHost;
 import edu.boun.edgecloudsim.network.NetworkModel;
 import edu.boun.edgecloudsim.utils.Location;
 import edu.boun.edgecloudsim.utils.SimLogger;
@@ -33,6 +30,17 @@ public class VehicularNetworkModel extends NetworkModel {
 	private static final double SHADOW_FADING_STD_DEV = 8.1; // dB
 	private static final double SPEED_OF_LIGHT = 3e8; // m/s
 	private static final double EARTH_RADIUS = 6371000; // Earth radius in meters
+	
+	private static final double REFERENCE_DISTANCE = 1.0; // meters
+	private static final double CARRIER_FREQUENCY = 5.9e9; // 5.9 GHz (V2X band)
+	private static final double VEHICULAR_PATH_LOSS_EXPONENT = 2.5; // Vehicular path loss exponent
+	private static final double SHADOWING_STD_DEV = 8.0; // dB (vehicular environment)
+	private static final double NOISE_FIGURE = 5; // dB (receiver noise figure)
+	private static final double NOISE_DENSITY = -174; // dBm/Hz (thermal noise)
+	private static final double ANTENNA_GAIN = 20; // dBi (antenna gain for beamforming)
+	private static final double TX_POWER = 30; // dBm (transmit power)
+	private static final int NUM_ANTENNAS = 4; // Number of antennas for MIMO
+	
 
 	public static double maxWlanDelay = 0;
 	public static double maxWanDelay = 0;
@@ -377,7 +385,7 @@ public class VehicularNetworkModel extends NetworkModel {
 
 			Location sourceLoc = task.getSubmittedLocation();
 			Location desLoca = getDestinationLocByTask(task, sourceLoc);
-			int dId = task.getMobileDeviceId();
+			//int dId = task.getMobileDeviceId();
 //			boolean log = dId == 10;
 			boolean log = true;
 
@@ -387,11 +395,11 @@ public class VehicularNetworkModel extends NetworkModel {
 				delay = get5GUploadDelay(task.getCloudletFileSize(), false, time, sourceLoc, desLoca, justEstimate);
 			}
 
+			/*
 			if (delay != 0) {
 				delay += calculate5GPropagationDelay(sourceLoc, desLoca);
 			}
-
-			
+			*/
 		}
 		
 		SimLogger.getInstance().PrintDelayLog(time, delay);
@@ -539,7 +547,55 @@ public class VehicularNetworkModel extends NetworkModel {
 	private double get5GDownloadDelay(double taskSize, boolean log, double time, Location sourceLocation,
 			Location destLocation, boolean justEstimate) {
 
-		double bw = SimSettings.getInstance().get5GBandwidth();
+				double taskSizeInBits = taskSize * 1000 * 8;
+		
+				double bw = SimSettings.getInstance().get5GBandwidth();
+				
+			//	double distance = calculateDistance(sourceLocation.getLatitude(), sourceLocation.getLongitude(),
+			//			destLocation.getLatitude(), destLocation.getLongitude());
+				double distance = Haversine.calculateDistanceMeters(sourceLocation.getLatitude(), sourceLocation.getLongitude(),
+						destLocation.getLatitude(), destLocation.getLongitude());
+				
+				// Path loss
+				double pathLoss = calculate5GPathLoss(distance);
+
+				// Signal-to-Noise Ratio (SNR) calculation
+				double noisePower = NOISE_DENSITY + 10 * Math.log10(bw) + NOISE_FIGURE; // dBm
+
+				double snr = TX_POWER + ANTENNA_GAIN - pathLoss - noisePower; // dB (include antenna gain)
+
+				// Ensure SNR is positive
+				if (snr < 0) {
+					snr = 1; // Minimum SNR to avoid unrealistic values
+				}
+
+				// Transmission rate (Shannon's capacity formula with MIMO gain)
+				double capacity = bw * Math.log10(1 + Math.pow(10, snr / 10)) / Math.log10(2); // bits per second
+				
+				double transmissionRate = capacity / 8 * 1; // bytes per second (MIMO gain)
+				
+				if (log)
+					SimLogger.getInstance().addDelayLog(
+							new DelayLogItem(time, task.getMobileDeviceId(), false, pathLoss, distance, transmissionRate));
+
+				// Transmission delay
+				double transmissionDelay = taskSizeInBits / transmissionRate;
+
+				// Propagation delay
+				double propagationDelay = distance / SPEED_OF_LIGHT;
+
+				// Queueing delay (M/M/1 model)
+				/*double lamda = 1 / fiveGMMPPForDownload.getPoissonMean(); // Arrival rate (tasks per second)
+				double mu = transmissionRate / taskSize; // Service rate (tasks per second)
+				
+				double queueingDelay = (mu > lamda * deviceCount) ? 1 / (mu - lamda * deviceCount) : 0; // Avoid negative or
+																										// infinite delay
+				*/
+				double queueingDelay = calculateMM1(taskSize, capacity, fiveGMMPPForDownload, justEstimate);
+				
+				// Total delay
+				return transmissionDelay + propagationDelay + queueingDelay;
+		/*double bw = SimSettings.getInstance().get5GBandwidth();
 
 		double distance = calculateDistance(sourceLocation.getLatitude(), sourceLocation.getLongitude(),
 				destLocation.getLatitude(), destLocation.getLongitude());
@@ -562,17 +618,57 @@ public class VehicularNetworkModel extends NetworkModel {
 			max5GDelay = result;
 		}
 
-		return result;
+		return result;*/
 	}
 
 	private double get5GUploadDelay(double taskSize, boolean log, double time, Location sourceLocation,
 			Location destLocation, boolean justEstimate) {
 
+		double taskSizeInBits = taskSize * 1000 * 8;
+				
 		double bw = SimSettings.getInstance().get5GBandwidth();
 
 //		double distance = calculateDistance(sourceLocation.getLatitude(), sourceLocation.getLongitude(), destLocation.getLatitude(), destLocation.getLongitude());
 		double distance = Haversine.calculateDistanceMeters(sourceLocation.getLatitude(), sourceLocation.getLongitude(),
 				destLocation.getLatitude(), destLocation.getLongitude());
+
+		double pathLoss = calculate5GPathLoss(distance);
+		
+		// Signal-to-Noise Ratio (SNR) calculation
+		double noisePower = NOISE_DENSITY + 10 * Math.log10(bw) + NOISE_FIGURE; // dBm
+		double snr = TX_POWER + ANTENNA_GAIN - pathLoss - noisePower; // dB (include antenna gain)
+
+		// Ensure SNR is positive
+		if (snr < 0) {
+			snr = 1; // Minimum SNR to avoid unrealistic values
+		}
+
+		// Transmission rate (Shannon's capacity formula with MIMO gain)
+		double capacity = bw * Math.log10(1 + Math.pow(10, snr / 10)) / Math.log10(2); // bits per second
+
+		double transmissionRate = capacity / 8 * 1; // bytes per second (MIMO gain)
+
+		if (log)
+			SimLogger.getInstance().addDelayLog(
+					new DelayLogItem(time, task.getMobileDeviceId(), true, pathLoss, distance, transmissionRate));
+		// Transmission delay
+		double transmissionDelay = (taskSizeInBits)/ transmissionRate;
+
+		// Propagation delay
+		double propagationDelay = distance / SPEED_OF_LIGHT;
+
+		// Queueing delay (M/M/1 model)
+		/*double lamda = 1 / fiveGMMPPForDownload.getPoissonMean(); // Arrival rate (tasks per second)
+		double mu = transmissionRate / taskSize; // Service rate (tasks per second)
+		
+		double queueingDelay = (mu > lamda * deviceCount) ? 1 / (mu - lamda * deviceCount) : 0; // Avoid negative or
+																								// infinite delay
+		*/
+		double queueingDelay = calculateMM1(taskSize, capacity, fiveGMMPPForUpload, justEstimate);
+
+		return transmissionDelay + propagationDelay + queueingDelay;
+		
+		/*
 		double d2 = Haversine.calculateDistance(sourceLocation.getLatitude(), sourceLocation.getLongitude(),
 				destLocation.getLatitude(), destLocation.getLongitude());
 
@@ -582,6 +678,10 @@ public class VehicularNetworkModel extends NetworkModel {
 		int transmittedPower = 30;
 
 		double signalStrength = transmittedPower - pathLoss;
+		
+		// Signal-to-Noise Ratio (SNR) calculation
+		//double noisePower = NOISE_DENSITY + 10 * Math.log10(bw) + NOISE_FIGURE; // dBm
+		//double signalStrength = TX_POWER + ANTENNA_GAIN - pathLoss - noisePower; // dB (include antenna gain)
 
 		if (log)
 			SimLogger.getInstance().addDelayLog(
@@ -600,6 +700,7 @@ public class VehicularNetworkModel extends NetworkModel {
 		}
 
 		return result;
+		*/
 	}
 
 //	private double calculate5GPathLoss(double distance) {
@@ -615,6 +716,20 @@ public class VehicularNetworkModel extends NetworkModel {
 																								// dB
 		double pl = fspl + 10 * PATH_LOSS_EXPONENT * Math.log10(distance) + SHADOW_FADING_STD_DEV;
 		return pl;
+		
+		/*if (distance < REFERENCE_DISTANCE) {
+			distance = REFERENCE_DISTANCE; // Avoid log10(0)
+		}
+
+		double freeSpacePathLoss = 20 * Math.log10(distance) + 20 * Math.log10(frequency) - 147.55;
+
+		double pathLoss = freeSpacePathLoss
+				+ 10 * VEHICULAR_PATH_LOSS_EXPONENT * Math.log10(distance / REFERENCE_DISTANCE);
+
+		//TODO change getGaussianRandom(0, SHADOWING_STD_DEV) to 
+		double shadowing = SimUtils.getRandomDoubleNumber(0, SHADOWING_STD_DEV); // Shadowing effect
+
+		return pathLoss + shadowing;*/
 	}
 
 	/**
